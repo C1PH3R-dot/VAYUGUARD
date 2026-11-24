@@ -89,7 +89,7 @@ No API key required! VayuGuard queries:
 - **Weather Forecast**: `https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m,relative_humidity_2m,wind_speed_10m&timezone=auto`
 
 ### 2. Google Gemini API
-Powered by `gemini-3-flash-preview` (via Google Generative Language API).
+Powered by `gemini-2.0-flash` (via Google Generative Language API).
 - **Environment Variable**: Set `VITE_GEMINI_API_KEY` in your `.env` file for automatic deployment.
 - **In-App Modal**: Users can click **"Connect Gemini Key"** in the navigation bar to enter their Google AI Studio API key at runtime. The key is stored in `sessionStorage` and never transmitted to any third party.
 - **Graceful Fallback**: If no Gemini API key is provided, the full dashboard, air quality calculations, hourly trends, action planner, and telemetry remain 100% operational.
@@ -104,8 +104,8 @@ Powered by `gemini-3-flash-preview` (via Google Generative Language API).
 
 ### 1. Clone & Install Dependencies
 ```bash
-git clone https://github.com/your-username/vayuguard.git
-cd vayuguard
+git clone https://github.com/C1PH3R-dot/VAYUGUARD.git
+cd VAYUGUARD
 npm install
 ```
 
