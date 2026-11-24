@@ -29,3 +29,7 @@ dist-ssr
 .env.production
 .env.development
 .env.*.local
+
+*.tsbuildinfo
+vite.config.d.ts
+vite.config.js
