@@ -478,7 +478,7 @@ type TelemetryLogger = (entry: Omit<ApiTelemetryLog, 'id' | 'timestamp'>) => voi
 export async function detectLiveUserLocation(
   onLog: TelemetryLogger
 ): Promise<CityLocation> {
-  // 1. Try Browser Geolocation + Open-Meteo Reverse Geocoding
+  // 1. Try Browser Geolocation + Reverse Geocoding
   if (typeof navigator !== 'undefined' && 'geolocation' in navigator) {
     try {
       const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
@@ -490,31 +490,38 @@ export async function detectLiveUserLocation(
       const lat = pos.coords.latitude;
       const lon = pos.coords.longitude;
       const t0 = performance.now();
-      const revUrl = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`;
-      const res = await fetch(revUrl);
-      const latencyMs = Math.round(performance.now() - t0);
-      if (res.ok) {
-        const data = await res.json();
-        const addr = data.address || {};
-        const name =
-          addr.city || addr.town || addr.village || addr.municipality || 'Current Location';
-        const country = addr.country || 'Detected Region';
-        onLog({
-          service: 'Browser GPS + Reverse Geo',
-          endpoint: 'nominatim.openstreetmap.org/reverse',
-          status: res.status,
-          latencyMs,
-          note: `Detected ${name}, ${country} (${lat.toFixed(2)}, ${lon.toFixed(2)})`,
-        });
-        return {
-          id: `gps-${lat.toFixed(3)}-${lon.toFixed(3)}`,
-          name,
-          country,
-          latitude: lat,
-          longitude: lon,
-          detectionMethod: 'browser-gps',
-        };
+      let name = 'Current Location';
+      let country = 'Detected via GPS';
+
+      try {
+        const revUrl = `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=en`;
+        const res = await fetch(revUrl);
+        if (res.ok) {
+          const data = await res.json();
+          name =
+            data.city || data.locality || data.principalSubdivision || 'Current Location';
+          country = data.countryName || 'Detected Region';
+        }
+      } catch {
+        // Retain GPS fallback label
       }
+
+      const latencyMs = Math.round(performance.now() - t0);
+      onLog({
+        service: 'Browser GPS Location',
+        endpoint: 'navigator.geolocation',
+        status: 200,
+        latencyMs,
+        note: `Detected ${name}, ${country} (${lat.toFixed(2)}, ${lon.toFixed(2)})`,
+      });
+      return {
+        id: `gps-${lat.toFixed(3)}-${lon.toFixed(3)}`,
+        name,
+        country,
+        latitude: lat,
+        longitude: lon,
+        detectionMethod: 'browser-gps',
+      };
     } catch {
       // Fall through to live IP geolocation
     }
@@ -947,8 +954,12 @@ async function generateGroundedSmogAdvice(params: {
     onLog,
   } = params;
 
-  const effectiveKey = (userApiKey.trim() || (import.meta.env.VITE_GEMINI_API_KEY as string) || '').trim();
-  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${encodeURIComponent(
+  const effectiveKey = (
+    userApiKey.trim() ||
+    (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_GEMINI_API_KEY) ||
+    ''
+  ).trim();
+  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(
     effectiveKey
   )}`;
 
@@ -1010,8 +1021,8 @@ Rules:
       const latencyMs = Math.round(performance.now() - t0);
 
       onLog({
-        service: 'Gemini 3 Flash API',
-        endpoint: 'generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent',
+        service: 'Gemini 2.0 Flash API',
+        endpoint: 'generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent',
         status: response.status,
         latencyMs,
         note: `Grounded prompt for ${snapshot.location.name} (AQI ${snapshot.current.usAqi})`,
@@ -1054,8 +1065,8 @@ const AqiRadialGauge: React.FC<{
   category: AqiCategoryInfo;
   pm25: number;
 }> = ({ aqi, category, pm25 }) => {
-  const clamped = Math.min(400, Math.max(0, aqi));
-  const pct = clamped / 400;
+  const clamped = Math.min(500, Math.max(0, aqi));
+  const pct = clamped / 500;
   const radius = 52;
   const circumference = 2 * Math.PI * radius;
   const arcLength = circumference * 0.75;
@@ -1100,24 +1111,27 @@ const AqiRadialGauge: React.FC<{
         />
         <text
           x="78"
-          y="65"
+          y="58"
           textAnchor="middle"
+          dominantBaseline="central"
           className="fill-slate-900 dark:fill-white font-extrabold text-[28px] tracking-tight"
         >
           {aqi}
         </text>
         <text
           x="78"
-          y="83"
+          y="78"
           textAnchor="middle"
+          dominantBaseline="central"
           className="fill-slate-500 dark:fill-slate-400 font-semibold text-[10px] uppercase tracking-wider"
         >
           US EPA AQI
         </text>
         <text
           x="78"
-          y="134"
+          y="130"
           textAnchor="middle"
+          dominantBaseline="central"
           className="fill-slate-700 dark:fill-slate-300 font-semibold text-[11px]"
         >
           PM2.5: {pm25} µg/m³
@@ -1197,7 +1211,7 @@ const HourlyForecastChart: React.FC<{
         {points
           .filter((_, i) => i % 4 === 0)
           .map((pt, i) => (
-            <span key={i}>{pt.hourLabel}</span>
+            <span key={pt.time || pt.hourLabel || i}>{pt.hourLabel}</span>
           ))}
       </div>
     </div>
@@ -1472,9 +1486,10 @@ export function VayuGuard() {
     setChatInput('');
     setIsGeneratingAi(true);
 
-    const profileObj = SENSITIVITY_PROFILES.find((p) => p.id === profileId)!;
-    const commuteObj = COMMUTE_MODES.find((c) => c.id === commuteId)!;
-    const homeObj = HOME_SETUPS.find((h) => h.id === homeSetupId)!;
+    const profileObj =
+      SENSITIVITY_PROFILES.find((p) => p.id === profileId) || SENSITIVITY_PROFILES[0];
+    const commuteObj = COMMUTE_MODES.find((c) => c.id === commuteId) || COMMUTE_MODES[0];
+    const homeObj = HOME_SETUPS.find((h) => h.id === homeSetupId) || HOME_SETUPS[0];
     const selectedActions = allRecommendations.filter((r) => committedIds.includes(r.id));
 
     const { text: replyText, isLiveGemini } = await generateGroundedSmogAdvice({
@@ -1833,7 +1848,7 @@ export function VayuGuard() {
 
                     <div className="flex-1 space-y-3 text-center sm:text-left">
                       <div
-                        className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl border font-semibold text-sm shadow-2xs ${categoryInfo.badgeBg} ${categoryInfo.badgeText} ${categoryInfo.borderColor}`}
+                        className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl border font-semibold text-sm shadow-sm ${categoryInfo.badgeBg} ${categoryInfo.badgeText} ${categoryInfo.borderColor}`}
                       >
                         {categoryInfo.level <= 2 ? (
                           <ShieldCheck className="w-4 h-4 shrink-0" aria-hidden="true" />
@@ -2121,19 +2136,19 @@ export function VayuGuard() {
               </div>
 
               <div className="grid grid-cols-3 gap-3">
-                <div className="bg-white/10 backdrop-blur-xs rounded-xl p-3">
+                <div className="bg-white/10 backdrop-blur-sm rounded-xl p-3">
                   <div className="text-[11px] uppercase tracking-wider text-teal-100 font-semibold">
                     Inhaled PM2.5 Cut
                   </div>
                   <div className="text-2xl sm:text-3xl font-extrabold mt-0.5">
-                    {cumulativeImpact.combinedExposureDropPct}%
+                    -{cumulativeImpact.combinedExposureDropPct}%
                   </div>
                   <div className="text-[11px] text-teal-100 mt-0.5">
                     {cumulativeImpact.dailyUgSaved} µg PM2.5/day spared
                   </div>
                 </div>
 
-                <div className="bg-white/10 backdrop-blur-xs rounded-xl p-3">
+                <div className="bg-white/10 backdrop-blur-sm rounded-xl p-3">
                   <div className="text-[11px] uppercase tracking-wider text-teal-100 font-semibold">
                     Weekly CO₂ Avoided
                   </div>
@@ -2145,7 +2160,7 @@ export function VayuGuard() {
                   </div>
                 </div>
 
-                <div className="bg-white/10 backdrop-blur-xs rounded-xl p-3">
+                <div className="bg-white/10 backdrop-blur-sm rounded-xl p-3">
                   <div className="text-[11px] uppercase tracking-wider text-teal-100 font-semibold">
                     Annualized Impact
                   </div>
@@ -2193,7 +2208,7 @@ export function VayuGuard() {
                     onClick={() => setActiveTab(tab.id)}
                     className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs sm:text-sm font-semibold transition-all ${
                       active
-                        ? 'bg-white dark:bg-slate-900 text-teal-700 dark:text-teal-300 shadow-2xs'
+                        ? 'bg-white dark:bg-slate-900 text-teal-700 dark:text-teal-300 shadow-sm'
                         : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                     }`}
                   >
@@ -2213,7 +2228,7 @@ export function VayuGuard() {
                     key={rec.id}
                     className={`rounded-2xl border p-4 sm:p-5 transition-all ${
                       isCommitted
-                        ? 'border-teal-500 dark:border-teal-600 bg-teal-50/40 dark:bg-teal-950/20 shadow-2xs'
+                        ? 'border-teal-500 dark:border-teal-600 bg-teal-50/40 dark:bg-teal-950/20 shadow-sm'
                         : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900'
                     }`}
                   >
@@ -2254,7 +2269,7 @@ export function VayuGuard() {
                     <div className="mt-3.5 pl-9 flex flex-wrap gap-2">
                       <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-100/90 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200">
                         <Activity className="w-3.5 h-3.5" />
-                        -{rec.pm25ExposureReductionPct}% ({rec.ugInhaledSavedPerDay} µg/day spared)
+                        -{rec.pm25ExposureReductionPct}% (-{rec.ugInhaledSavedPerDay} µg/day)
                       </span>
                       <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-sky-100/90 text-sky-900 dark:bg-sky-950 dark:text-sky-200">
                         <Leaf className="w-3.5 h-3.5" />
@@ -2294,7 +2309,7 @@ export function VayuGuard() {
             <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900">
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-2xs">
+                  <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-sm">
                     <Sparkles className="w-5 h-5" aria-hidden="true" />
                   </div>
                   <div>
@@ -2302,7 +2317,7 @@ export function VayuGuard() {
                       id="ai-advisor-heading"
                       className="text-base font-bold text-slate-900 dark:text-white"
                     >
-                      Live Gemini 3 Flash Advisor
+                      Live Gemini 2.0 Flash Advisor
                     </h2>
                     <p className="text-[11px] text-slate-500 dark:text-slate-400">
                       Grounded on real-time {selectedCity?.name || 'local'} telemetry
@@ -2335,7 +2350,7 @@ export function VayuGuard() {
                     </p>
                     <p className="text-xs text-slate-500 dark:text-slate-400">
                       Every prompt sends live pollutant concentrations, weather, and your household
-                      selections directly to Gemini 3 Flash.
+                      selections directly to Gemini 2.0 Flash.
                     </p>
                   </div>
                 </div>
@@ -2351,7 +2366,7 @@ export function VayuGuard() {
                       className={`max-w-[92%] rounded-2xl px-4 py-3 text-xs sm:text-sm leading-relaxed whitespace-pre-line ${
                         msg.role === 'user'
                           ? 'bg-teal-600 text-white rounded-br-sm'
-                          : 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 border border-slate-200 dark:border-slate-700 rounded-bl-sm shadow-2xs'
+                          : 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 border border-slate-200 dark:border-slate-700 rounded-bl-sm shadow-sm'
                       }`}
                     >
                       {msg.text}
@@ -2369,7 +2384,7 @@ export function VayuGuard() {
               {isGeneratingAi && (
                 <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 animate-pulse">
                   <Sparkles className="w-4 h-4 text-indigo-500" />
-                  <span>Calling Gemini 3 Flash with live {selectedCity?.name} readings...</span>
+                  <span>Calling Gemini 2.0 Flash with live {selectedCity?.name} readings...</span>
                 </div>
               )}
               <div ref={chatEndRef} />
@@ -2451,7 +2466,7 @@ export function VayuGuard() {
           role="dialog"
           aria-modal="true"
           aria-labelledby="api-key-modal-title"
-          className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4"
+          className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4"
         >
           <form
             onSubmit={handleSaveApiKey}
@@ -2519,7 +2534,7 @@ export function VayuGuard() {
           role="dialog"
           aria-modal="true"
           aria-labelledby="telemetry-log-title"
-          className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4"
+          className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4"
         >
           <div className="max-w-2xl w-full rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 shadow-2xl space-y-4">
             <div className="flex items-center justify-between">
@@ -2589,7 +2604,7 @@ export function VayuGuard() {
           role="dialog"
           aria-modal="true"
           aria-labelledby="diagnostics-title"
-          className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4"
+          className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4"
         >
           <div className="max-w-lg w-full rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 shadow-2xl space-y-4">
             <div className="flex items-center justify-between">
