@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   clearApiCaches,
+  sanitizeSearchQuery,
   detectLiveUserLocation,
   searchCitiesLive,
   fetchLiveAirQualityAndWeather,
@@ -18,6 +19,28 @@ describe('API Services (Open-Meteo & Geolocation)', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  describe('sanitizeSearchQuery & coordinate validation', () => {
+    it('strips control characters and caps query length', () => {
+      expect(sanitizeSearchQuery('  London\u0000\u001F  ')).toBe('London');
+      expect(sanitizeSearchQuery('a'.repeat(150))).toHaveLength(100);
+    });
+
+    it('rejects out-of-range coordinates before fetching', async () => {
+      await expect(
+        fetchLiveAirQualityAndWeather(
+          {
+            id: 'bad',
+            name: 'Invalid',
+            country: 'None',
+            latitude: 95,
+            longitude: 0,
+          },
+          onLog
+        )
+      ).rejects.toThrow('Invalid geographic coordinates');
+    });
   });
 
   describe('searchCitiesLive', () => {

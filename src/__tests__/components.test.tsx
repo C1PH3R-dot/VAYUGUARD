@@ -159,13 +159,35 @@ describe('VayuGuard Dashboard Integration', () => {
 
     expect(await screen.findByText(/Keep windows sealed during 08:00–11:00/i)).toBeInTheDocument();
 
-    // Open Diagnostics modal
+    // Open Diagnostics modal and dismiss with Escape key
     await user.click(screen.getByRole('button', { name: /Open AQI Engine Verification Diagnostics/i }));
     expect(screen.getByRole('dialog', { name: /US EPA PM2\.5 AQI Engine Verification/i })).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: /Close diagnostics modal/i }));
+    await user.keyboard('{Escape}');
+    expect(
+      screen.queryByRole('dialog', { name: /US EPA PM2\.5 AQI Engine Verification/i })
+    ).not.toBeInTheDocument();
 
-    // Toggle dark mode
+    // Toggle dark mode and verify aria-pressed
     const themeBtn = screen.getByRole('button', { name: /Switch to (dark|light) mode/i });
+    const initialPressed = themeBtn.getAttribute('aria-pressed');
     await user.click(themeBtn);
+    expect(themeBtn.getAttribute('aria-pressed')).not.toBe(initialPressed);
+  });
+
+  it('displays accessible error alert and allows retry when live stream fails', async () => {
+    const user = userEvent.setup();
+    const fetchSpy = vi
+      .spyOn(apiServices, 'fetchLiveAirQualityAndWeather')
+      .mockRejectedValueOnce(new Error('Open-Meteo Air Quality API returned HTTP 503'))
+      .mockResolvedValueOnce(makeSnapshot(londonCity, 18.0, 66));
+
+    render(<VayuGuard />);
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(/Open-Meteo Air Quality API returned HTTP 503/i);
+
+    await user.click(screen.getByRole('button', { name: /Retry Live Fetch/i }));
+    expect(await screen.findByText('66')).toBeInTheDocument();
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
   });
 });

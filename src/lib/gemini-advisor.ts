@@ -137,8 +137,10 @@ Rules:
         continue;
       }
       const errMsg = err instanceof Error ? err.message : 'Network/API key unavailable';
+      // Redact any accidental query-string key material from error messages
+      const safeErrMsg = errMsg.replace(/key=[^&\s]+/gi, 'key=[REDACTED]');
       return {
-        text: `⚠️ **Live Gemini API Call Unauthenticated/Rate-Limited (${errMsg})**\nClick **"Connect Gemini Key"** in the top bar to enter a valid Google AI Studio key for live LLM synthesis.\n\n**Live Telemetry Calculation for ${snapshot.location.name} (AQI ${snapshot.current.usAqi} — ${category.label}):**\n• **Safest Outdoor Window:** **${cleanWindow.safestWindow.startHour}–${cleanWindow.safestWindow.endHour}** (Avg PM2.5 ${cleanWindow.safestWindow.avgPm25} µg/m³ vs. peak ${cleanWindow.peakSmogWindow.avgPm25} µg/m³).\n• **Tailored ${homeSetupLabel} & ${profileLabel} Action:** Seal windows during peak hours, filter bedroom air continuously (-62% PM2.5 dose), and replace solo cold-start car trips (-18.4 kg CO₂/wk).`,
+        text: `⚠️ **Live Gemini API Call Unauthenticated/Rate-Limited (${safeErrMsg})**\nClick **"Connect Gemini Key"** in the top bar to enter a valid Google AI Studio key for live LLM synthesis.\n\n**Live Telemetry Calculation for ${snapshot.location.name} (AQI ${snapshot.current.usAqi} — ${category.label}):**\n• **Safest Outdoor Window:** **${cleanWindow.safestWindow.startHour}–${cleanWindow.safestWindow.endHour}** (Avg PM2.5 ${cleanWindow.safestWindow.avgPm25} µg/m³ vs. peak ${cleanWindow.peakSmogWindow.avgPm25} µg/m³).\n• **Tailored ${homeSetupLabel} & ${profileLabel} Action:** Seal windows during peak hours, filter bedroom air continuously (-62% PM2.5 dose), and replace solo cold-start car trips (-18.4 kg CO₂/wk).`,
         isLiveGemini: false,
       };
     }

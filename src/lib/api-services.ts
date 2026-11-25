@@ -17,8 +17,37 @@ interface CacheEntry<T> {
 }
 
 const TTL_MS = 15 * 60 * 1000;
+const GEOLOCATION_TIMEOUT_MS = 4500;
+const GEOLOCATION_MAX_AGE_MS = 300000;
+const MAX_SEARCH_QUERY_LEN = 100;
+const DEFAULT_FALLBACK_TEMP_C = 18;
+const DEFAULT_FALLBACK_HUMIDITY_PCT = 50;
+const DEFAULT_FALLBACK_WIND_KMH = 10;
+
 const geoCache = new Map<string, CacheEntry<CityLocation[]>>();
 const aqiCache = new Map<string, CacheEntry<AirQualitySnapshot>>();
+
+/** Sanitize user-entered city search text by removing control characters and capping length. */
+export function sanitizeSearchQuery(rawQuery: string): string {
+  return rawQuery
+    .replace(/[\u0000-\u001F\u007F]/g, '')
+    .trim()
+    .slice(0, MAX_SEARCH_QUERY_LEN);
+}
+
+/** Validate geographic coordinates before constructing external API URLs. */
+function assertValidCoordinates(latitude: number, longitude: number): void {
+  if (
+    !Number.isFinite(latitude) ||
+    !Number.isFinite(longitude) ||
+    latitude < -90 ||
+    latitude > 90 ||
+    longitude < -180 ||
+    longitude > 180
+  ) {
+    throw new Error('Invalid geographic coordinates');
+  }
+}
 
 /** Clear internal geocoding and air quality caches (primarily for testing). */
 export function clearApiCaches(): void {
@@ -35,8 +64,8 @@ export async function detectLiveUserLocation(
     try {
       const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
         navigator.geolocation.getCurrentPosition(resolve, reject, {
-          timeout: 4500,
-          maximumAge: 300000,
+          timeout: GEOLOCATION_TIMEOUT_MS,
+          maximumAge: GEOLOCATION_MAX_AGE_MS,
         });
       });
       const lat = pos.coords.latitude;
@@ -129,7 +158,8 @@ export async function searchCitiesLive(
   query: string,
   onLog: TelemetryLogger
 ): Promise<CityLocation[]> {
-  const normalized = query.trim().toLowerCase();
+  const sanitized = sanitizeSearchQuery(query);
+  const normalized = sanitized.toLowerCase();
   if (normalized.length < 2) return [];
 
   const cached = geoCache.get(normalized);
@@ -139,17 +169,17 @@ export async function searchCitiesLive(
 
   const t0 = performance.now();
   const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(
-    query.trim()
+    sanitized
   )}&count=6&language=en&format=json`;
   const res = await fetch(url);
   const latencyMs = Math.round(performance.now() - t0);
 
   onLog({
     service: 'Open-Meteo Geocoding',
-    endpoint: `geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query.trim())}`,
+    endpoint: `geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(sanitized)}`,
     status: res.status,
     latencyMs,
-    note: `Query "${query.trim()}"`,
+    note: `Query "${sanitized}"`,
   });
 
   if (!res.ok) {
@@ -177,6 +207,7 @@ export async function fetchLiveAirQualityAndWeather(
   onLog: TelemetryLogger,
   forceRefresh = false
 ): Promise<AirQualitySnapshot> {
+  assertValidCoordinates(city.latitude, city.longitude);
   const cacheKey = `${city.latitude.toFixed(3)},${city.longitude.toFixed(3)}`;
   if (!forceRefresh) {
     const cached = aqiCache.get(cacheKey);
@@ -218,9 +249,9 @@ export async function fetchLiveAirQualityAndWeather(
 
   const wxCur = wxData.current || {};
   const weather: LiveWeatherMetrics = {
-    temperatureC: Number((wxCur.temperature_2m ?? 18).toFixed(1)),
-    humidityPct: Math.round(Number(wxCur.relative_humidity_2m ?? 50)),
-    windSpeedKmh: Number((wxCur.wind_speed_10m ?? 10).toFixed(1)),
+    temperatureC: Number((wxCur.temperature_2m ?? DEFAULT_FALLBACK_TEMP_C).toFixed(1)),
+    humidityPct: Math.round(Number(wxCur.relative_humidity_2m ?? DEFAULT_FALLBACK_HUMIDITY_PCT)),
+    windSpeedKmh: Number((wxCur.wind_speed_10m ?? DEFAULT_FALLBACK_WIND_KMH).toFixed(1)),
   };
 
   const hourlyRaw = data.hourly || {};

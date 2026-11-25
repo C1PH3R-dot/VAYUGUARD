@@ -30,7 +30,9 @@ const AqiRadialGauge: React.FC<AqiRadialGaugeProps> = ({ aqi, category, pm25 }) 
         height="144"
         viewBox="0 0 156 144"
         className="overflow-visible"
+        aria-hidden="true"
       >
+        <title>{`US EPA AQI ${aqi} (${category.label}), PM2.5 ${pm25} µg/m³`}</title>
         <circle
           cx="78"
           cy="68"
