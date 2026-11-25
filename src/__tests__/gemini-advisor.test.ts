@@ -150,4 +150,29 @@ describe('Gemini Grounded Smog Advisor', () => {
     expect(result.text).toContain('London');
     expect(result.text).toContain('13:00–16:00');
   });
+
+  it('does not retry on non-retryable HTTP 401 and sends API key in header', async () => {
+    const fetchSpy = vi.fn().mockResolvedValue({ ok: false, status: 401 });
+    vi.stubGlobal('fetch', fetchSpy);
+
+    const result = await generateGroundedSmogAdvice({
+      userQuestion: 'Auth check',
+      userApiKey: 'secret-key-123',
+      snapshot: mockSnapshot,
+      category: getAqiCategoryInfo(81),
+      cleanWindow: mockCleanWindow,
+      profileLabel: 'General Adult',
+      commuteLabel: 'Transit',
+      homeSetupLabel: 'HEPA',
+      selectedActions: [],
+      onLog,
+    });
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const [calledUrl, calledInit] = fetchSpy.mock.calls[0];
+    expect(calledUrl).not.toContain('secret-key-123');
+    expect(calledInit.headers['x-goog-api-key']).toBe('secret-key-123');
+    expect(result.isLiveGemini).toBe(false);
+    expect(result.text).toContain('HTTP 401');
+  });
 });

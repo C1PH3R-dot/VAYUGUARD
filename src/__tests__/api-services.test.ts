@@ -215,6 +215,48 @@ describe('API Services (Open-Meteo & Geolocation)', () => {
         'Open-Meteo Air Quality API returned HTTP 502'
       );
     });
+
+    it('handles non-numeric or malformed weather and hourly fields without throwing', async () => {
+      const futureIso = `${new Date(Date.now() + 2 * 3600 * 1000).toISOString().slice(0, 16)}Z`;
+      vi.stubGlobal(
+        'fetch',
+        vi
+          .fn()
+          .mockResolvedValueOnce({
+            ok: true,
+            status: 200,
+            json: async () => ({
+              current: { pm2_5: 'not-a-number', pm10: null },
+              hourly: {
+                time: [futureIso],
+                pm2_5: [null],
+                pm10: ['bad'],
+              },
+            }),
+          })
+          .mockResolvedValueOnce({
+            ok: true,
+            status: 200,
+            json: async () => ({
+              current: {
+                temperature_2m: 'invalid',
+                relative_humidity_2m: null,
+                wind_speed_10m: undefined,
+              },
+            }),
+          })
+      );
+
+      const snapshot = await fetchLiveAirQualityAndWeather(city, onLog, true);
+      expect(snapshot.current.pm25).toBe(0);
+      expect(snapshot.weather).toEqual({
+        temperatureC: 18,
+        humidityPct: 50,
+        windSpeedKmh: 10,
+      });
+      expect(snapshot.hourly).toHaveLength(1);
+      expect(snapshot.hourly[0].pm25).toBe(0);
+    });
   });
 
   describe('detectLiveUserLocation', () => {

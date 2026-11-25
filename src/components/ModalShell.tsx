@@ -1,8 +1,8 @@
 // ============================================================================
-// Accessible Modal Dialog Shell (Escape-Key & Backdrop Dismissal)
+// Accessible Modal Dialog Shell (Focus Management, Escape & Backdrop Dismissal)
 // ============================================================================
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { X } from 'lucide-react';
 
 interface ModalShellProps {
@@ -15,7 +15,8 @@ interface ModalShellProps {
 }
 
 /**
- * Reusable accessible dialog container supporting Escape-key and backdrop dismissal.
+ * Reusable accessible dialog container supporting Escape-key dismissal,
+ * backdrop click dismissal, initial focus placement, and focus restoration on close.
  */
 const ModalShell: React.FC<ModalShellProps> = ({
   titleId,
@@ -25,15 +26,27 @@ const ModalShell: React.FC<ModalShellProps> = ({
   onClose,
   children,
 }) => {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
   useEffect(() => {
+    const previouslyFocused =
+      typeof document !== 'undefined' ? (document.activeElement as HTMLElement | null) : null;
+
+    dialogRef.current?.focus();
+
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
-        onClose();
+        onCloseRef.current();
       }
     };
     document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      previouslyFocused?.focus?.();
+    };
+  }, []);
 
   return (
     <div
@@ -41,12 +54,14 @@ const ModalShell: React.FC<ModalShellProps> = ({
       aria-modal="true"
       aria-labelledby={titleId}
       onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
+        if (e.target === e.currentTarget) onCloseRef.current();
       }}
       className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4"
     >
       <div
-        className={`${maxWidthClass} w-full rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 shadow-2xl space-y-4`}
+        ref={dialogRef}
+        tabIndex={-1}
+        className={`${maxWidthClass} w-full rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 shadow-2xl space-y-4 focus:outline-none`}
       >
         <div className="flex items-center justify-between gap-2">
           <h2

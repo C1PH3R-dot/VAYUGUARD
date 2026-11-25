@@ -37,10 +37,10 @@ export function calculateUsEpaPm25Aqi(pm25Raw: number): number {
   return 0;
 }
 
-/** Map an AQI value to its category metadata (label, colors, guidance). */
-export function getAqiCategoryInfo(aqi: number): AqiCategoryInfo {
-  if (aqi <= 50) {
-    return {
+const AQI_CATEGORY_TABLE: ReadonlyArray<{ maxAqi: number; info: AqiCategoryInfo }> = [
+  {
+    maxAqi: 50,
+    info: {
       label: 'Good',
       shortLabel: 'Good',
       level: 1,
@@ -50,10 +50,11 @@ export function getAqiCategoryInfo(aqi: number): AqiCategoryInfo {
       accentHex: '#10b981',
       healthSummary: 'Clean air; ideal for natural cross-ventilation and outdoor activity.',
       maskGuidance: 'No respirator needed.',
-    };
-  }
-  if (aqi <= 100) {
-    return {
+    },
+  },
+  {
+    maxAqi: 100,
+    info: {
       label: 'Moderate',
       shortLabel: 'Moderate',
       level: 2,
@@ -64,10 +65,11 @@ export function getAqiCategoryInfo(aqi: number): AqiCategoryInfo {
       healthSummary:
         'Acceptable air quality; unusually sensitive individuals should limit prolonged exertion.',
       maskGuidance: 'Optional KN95/N95 for asthma or roadside commuters.',
-    };
-  }
-  if (aqi <= 150) {
-    return {
+    },
+  },
+  {
+    maxAqi: 150,
+    info: {
       label: 'Unhealthy for Sensitive Groups',
       shortLabel: 'USG',
       level: 3,
@@ -78,10 +80,11 @@ export function getAqiCategoryInfo(aqi: number): AqiCategoryInfo {
       healthSummary:
         'Children, older adults, and people with asthma/heart disease face elevated airway irritation.',
       maskGuidance: 'Well-fitted N95/KF94 recommended for sensitive groups outdoors.',
-    };
-  }
-  if (aqi <= 200) {
-    return {
+    },
+  },
+  {
+    maxAqi: 200,
+    info: {
       label: 'Unhealthy',
       shortLabel: 'Unhealthy',
       level: 4,
@@ -92,10 +95,11 @@ export function getAqiCategoryInfo(aqi: number): AqiCategoryInfo {
       healthSummary:
         'Everyone may begin to experience respiratory effects; move vigorous exercise indoors.',
       maskGuidance: 'Wear a certified N95/FFP2 respirator outdoors; seal windows.',
-    };
-  }
-  if (aqi <= 300) {
-    return {
+    },
+  },
+  {
+    maxAqi: 300,
+    info: {
       label: 'Very Unhealthy',
       shortLabel: 'Very Unhealthy',
       level: 5,
@@ -107,20 +111,29 @@ export function getAqiCategoryInfo(aqi: number): AqiCategoryInfo {
         'Health alert: significant winter smog accumulation. Avoid all non-essential outdoor exertion.',
       maskGuidance:
         'Mandatory tight-sealing N95/N99 outdoors; run HEPA/Corsi-Rosenthal continuously.',
-    };
-  }
-  return {
-    label: 'Hazardous',
-    shortLabel: 'Hazardous',
-    level: 6,
-    badgeBg: 'bg-red-200 dark:bg-red-950',
-    badgeText: 'text-red-950 dark:text-red-100',
-    borderColor: 'border-red-600 dark:border-red-600',
-    accentHex: '#dc2626',
-    healthSummary:
-      'Emergency conditions: severe particulate trapping. Shelter indoors with active filtration.',
-    maskGuidance: 'N99/P100 respirator required if stepping outside; wet-towel seal door gaps.',
-  };
+    },
+  },
+  {
+    maxAqi: Infinity,
+    info: {
+      label: 'Hazardous',
+      shortLabel: 'Hazardous',
+      level: 6,
+      badgeBg: 'bg-red-200 dark:bg-red-950',
+      badgeText: 'text-red-950 dark:text-red-100',
+      borderColor: 'border-red-600 dark:border-red-600',
+      accentHex: '#dc2626',
+      healthSummary:
+        'Emergency conditions: severe particulate trapping. Shelter indoors with active filtration.',
+      maskGuidance: 'N99/P100 respirator required if stepping outside; wet-towel seal door gaps.',
+    },
+  },
+];
+
+/** Map an AQI value to its category metadata (label, colors, guidance). */
+export function getAqiCategoryInfo(aqi: number): AqiCategoryInfo {
+  const match = AQI_CATEGORY_TABLE.find((entry) => aqi <= entry.maxAqi);
+  return (match ?? AQI_CATEGORY_TABLE[AQI_CATEGORY_TABLE.length - 1]).info;
 }
 
 /** Built-in verification test suite for the AQI engine. */

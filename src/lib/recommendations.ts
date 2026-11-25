@@ -12,27 +12,25 @@ import type {
 } from '../types';
 import { SENSITIVITY_PROFILES } from './profiles';
 
-/**
- * Build tailored action recommendations based on live air quality data,
- * clean-air window analysis, and the user's household profile.
- */
-export function buildTailoredRecommendations(
-  snapshot: AirQualitySnapshot,
+const HIGH_SMOG_AQI_THRESHOLD = 100;
+const ELEVATED_NO2_UGM3 = 40;
+const MIN_SWING_REDUCTION_PCT = 10;
+const MAX_SWING_REDUCTION_PCT = 52;
+
+type UgSavedCalculator = (pct: number) => number;
+
+function buildRoutineRecommendations(
   cleanWindow: CleanWindowAnalysis,
   profileId: SensitivityProfileId,
   commute: CommuteModeId,
-  homeSetup: HomeSetupId
+  no2: number,
+  isHighSmog: boolean,
+  calcUgSaved: UgSavedCalculator
 ): ActionRecommendation[] {
-  const { pm25, no2, usAqi } = snapshot.current;
-  const profileObj =
-    SENSITIVITY_PROFILES.find((p) => p.id === profileId) || SENSITIVITY_PROFILES[0];
-  const baselineDailyUgInhaled = pm25 * profileObj.dailyVentilationM3;
-  const isHighSmog = usAqi > 100;
-
   const swingPct = Math.max(
-    10,
+    MIN_SWING_REDUCTION_PCT,
     Math.min(
-      52,
+      MAX_SWING_REDUCTION_PCT,
       Math.round(
         ((cleanWindow.peakSmogWindow.avgPm25 - cleanWindow.safestWindow.avgPm25) /
           Math.max(1, cleanWindow.peakSmogWindow.avgPm25)) *
@@ -41,10 +39,19 @@ export function buildTailoredRecommendations(
     )
   );
 
-  const calcUgSaved = (pct: number) =>
-    Math.round((baselineDailyUgInhaled * (pct / 100)) * 10) / 10;
+  const commuteTitle =
+    commute === 'car'
+      ? 'Swap 3 Solo Car Trips/Week for Metro/Rail + Recirculate Cabin Air'
+      : commute === 'active'
+      ? 'Reroute 200m Off Arterial Roads + Wear Fitted N95 During Rush Hour'
+      : commute === 'transit'
+      ? 'Off-Peak Transit Boarding + Closed-Window Station Waiting'
+      : 'Batch Cold-Start Errands into One Warm-Engine Loop';
 
-  const routines: ActionRecommendation[] = [
+  const commuteReductionPct = commute === 'active' ? 42 : 24;
+  const maskReductionPct = isHighSmog ? 68 : 22;
+
+  return [
     {
       id: 'routine-window-shift',
       category: 'routine',
@@ -67,28 +74,21 @@ export function buildTailoredRecommendations(
     {
       id: 'routine-commute-swap',
       category: 'routine',
-      title:
-        commute === 'car'
-          ? 'Swap 3 Solo Car Trips/Week for Metro/Rail + Recirculate Cabin Air'
-          : commute === 'active'
-          ? 'Reroute 200m Off Arterial Roads + Wear Fitted N95 During Rush Hour'
-          : commute === 'transit'
-          ? 'Off-Peak Transit Boarding + Closed-Window Station Waiting'
-          : 'Batch Cold-Start Errands into One Warm-Engine Loop',
+      title: commuteTitle,
       subtitle:
         commute === 'car'
           ? 'Eliminates cold-start tailpipe NOx & cabin traffic-plume spikes'
           : 'Side streets reduce ultrafine black carbon & NO2 by 35–50%',
       budgetTier: 'Free',
-      pm25ExposureReductionPct: commute === 'active' ? 42 : 24,
-      ugInhaledSavedPerDay: calcUgSaved(commute === 'active' ? 42 : 24),
+      pm25ExposureReductionPct: commuteReductionPct,
+      ugInhaledSavedPerDay: calcUgSaved(commuteReductionPct),
       co2AvoidedKgPerWeek: commute === 'car' ? 18.4 : commute === 'transit' ? 9.2 : 6.5,
       cadrOrEquivalent:
         commute === 'car' ? '~45 g NOx + 18.4 kg CO2 saved/wk' : '40% lower commuter lung dose',
       whyItWorks:
         'Cold engines emit 3–5× more hydrocarbons and NOx in the first 5 minutes before catalytic converters reach light-off temperature.',
       tailoredNote:
-        no2 > 40
+        no2 > ELEVATED_NO2_UGM3
           ? `Live NO2 is elevated (${no2} µg/m³)—avoiding congested intersections directly reduces airway inflammation.`
           : 'Keeping vehicle HVAC on "Recirculate" with a clean cabin filter cuts in-cabin PM2.5 by up to 65%.',
     },
@@ -102,8 +102,8 @@ export function buildTailoredRecommendations(
         ? 'Electrostatic melt-blown media captures >95% of 0.3–2.5 µm aerosols'
         : 'Prevents indoor CO2 buildup without inviting evening smog inside',
       budgetTier: 'Under $50',
-      pm25ExposureReductionPct: isHighSmog ? 68 : 22,
-      ugInhaledSavedPerDay: calcUgSaved(isHighSmog ? 68 : 22),
+      pm25ExposureReductionPct: maskReductionPct,
+      ugInhaledSavedPerDay: calcUgSaved(maskReductionPct),
       co2AvoidedKgPerWeek: 3.4,
       cadrOrEquivalent: isHighSmog
         ? '95% filtration efficiency at 0.3 µm'
@@ -116,8 +116,16 @@ export function buildTailoredRecommendations(
           : 'Skip idling your car in the driveway—modern fuel-injected engines warm faster under gentle driving.',
     },
   ];
+}
 
-  const indoor: ActionRecommendation[] = [
+function buildIndoorRecommendations(
+  profileId: SensitivityProfileId,
+  homeSetup: HomeSetupId,
+  calcUgSaved: UgSavedCalculator
+): ActionRecommendation[] {
+  const sourceControlPct = homeSetup === 'gas_incense' ? 54 : 31;
+
+  return [
     {
       id: 'indoor-filtration',
       category: 'indoor',
@@ -152,8 +160,8 @@ export function buildTailoredRecommendations(
           : 'Always Run Exhaust Hood on High & Lid Pots While Cooking',
       subtitle: 'Eliminates indoor NO2, ultra-fine cooking aerosols & soot spikes',
       budgetTier: 'Free',
-      pm25ExposureReductionPct: homeSetup === 'gas_incense' ? 54 : 31,
-      ugInhaledSavedPerDay: calcUgSaved(homeSetup === 'gas_incense' ? 54 : 31),
+      pm25ExposureReductionPct: sourceControlPct,
+      ugInhaledSavedPerDay: calcUgSaved(sourceControlPct),
       co2AvoidedKgPerWeek: homeSetup === 'gas_incense' ? 8.5 : 2.1,
       cadrOrEquivalent: 'Prevents 200+ µg/m³ indoor kitchen spikes',
       whyItWorks:
@@ -177,8 +185,10 @@ export function buildTailoredRecommendations(
         'Foam weatherstripping and rolled damp door towels block drafts while reducing HVAC energy consumption.',
     },
   ];
+}
 
-  const community: ActionRecommendation[] = [
+function buildCommunityRecommendations(calcUgSaved: UgSavedCalculator): ActionRecommendation[] {
+  return [
     {
       id: 'comm-school-anti-idle',
       category: 'community',
@@ -192,7 +202,7 @@ export function buildTailoredRecommendations(
       whyItWorks:
         'Tailpipe plumes at school gates pool in stagnant air right where children line up.',
       tailoredNote:
-        'Share a 1-page parent/HOA pledge: turning off engines for stops >30 seconds saves fuel and protects kids\' lungs.',
+        "Share a 1-page parent/HOA pledge: turning off engines for stops >30 seconds saves fuel and protects kids' lungs.",
     },
     {
       id: 'comm-carpool-microtransit',
@@ -225,6 +235,38 @@ export function buildTailoredRecommendations(
         'Pair with local hardy evergreen vegetative buffers along school fences to trap coarse road dust.',
     },
   ];
+}
 
-  return [...routines, ...indoor, ...community];
+/**
+ * Build tailored action recommendations based on live air quality data,
+ * clean-air window analysis, and the user's household profile.
+ */
+export function buildTailoredRecommendations(
+  snapshot: AirQualitySnapshot,
+  cleanWindow: CleanWindowAnalysis,
+  profileId: SensitivityProfileId,
+  commute: CommuteModeId,
+  homeSetup: HomeSetupId
+): ActionRecommendation[] {
+  const { pm25, no2, usAqi } = snapshot.current;
+  const profileObj =
+    SENSITIVITY_PROFILES.find((p) => p.id === profileId) || SENSITIVITY_PROFILES[0];
+  const baselineDailyUgInhaled = pm25 * profileObj.dailyVentilationM3;
+  const isHighSmog = usAqi > HIGH_SMOG_AQI_THRESHOLD;
+
+  const calcUgSaved: UgSavedCalculator = (pct) =>
+    Math.round(baselineDailyUgInhaled * (pct / 100) * 10) / 10;
+
+  return [
+    ...buildRoutineRecommendations(
+      cleanWindow,
+      profileId,
+      commute,
+      no2,
+      isHighSmog,
+      calcUgSaved
+    ),
+    ...buildIndoorRecommendations(profileId, homeSetup, calcUgSaved),
+    ...buildCommunityRecommendations(calcUgSaved),
+  ];
 }

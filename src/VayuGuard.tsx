@@ -233,11 +233,11 @@ export function VayuGuard() {
     [allRecommendations, committedIds, snapshot, profileId]
   );
 
-  const toggleCommitAction = (id: string) => {
+  const toggleCommitAction = useCallback((id: string) => {
     setCommittedIds((prev) =>
       prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
     );
-  };
+  }, []);
 
   const handleAskAdvisor = async (promptText: string) => {
     const question = promptText.trim();

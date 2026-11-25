@@ -2,7 +2,7 @@
 // Top Navigation Header & Live City Search Bar
 // ============================================================================
 
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import {
   Wind,
   Search,
@@ -67,6 +67,11 @@ const HeaderBar: React.FC<HeaderBarProps> = ({
   onOpenDiagnostics,
 }) => {
   const searchContainerRef = useRef<HTMLDivElement>(null);
+  const [activeOptionIdx, setActiveOptionIdx] = useState<number>(-1);
+
+  useEffect(() => {
+    setActiveOptionIdx(-1);
+  }, [searchResults, showDropdown]);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -80,6 +85,25 @@ const HeaderBar: React.FC<HeaderBarProps> = ({
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [onShowDropdownChange]);
+
+  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Escape') {
+      onShowDropdownChange(false);
+      return;
+    }
+    if (!showDropdown || searchResults.length === 0) return;
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setActiveOptionIdx((prev) => (prev + 1) % searchResults.length);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setActiveOptionIdx((prev) => (prev <= 0 ? searchResults.length - 1 : prev - 1));
+    } else if (e.key === 'Enter' && activeOptionIdx >= 0) {
+      e.preventDefault();
+      onSelectCity(searchResults[activeOptionIdx]);
+    }
+  };
 
   return (
     <header className="sticky top-0 z-30 border-b border-slate-200 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md">
@@ -126,14 +150,17 @@ const HeaderBar: React.FC<HeaderBarProps> = ({
                 aria-expanded={showDropdown}
                 aria-controls={CITY_SEARCH_LISTBOX_ID}
                 aria-autocomplete="list"
+                aria-activedescendant={
+                  showDropdown && activeOptionIdx >= 0 && searchResults[activeOptionIdx]
+                    ? `city-option-${searchResults[activeOptionIdx].id}`
+                    : undefined
+                }
                 value={searchQuery}
                 onFocus={() => {
                   if (searchResults.length > 0 || searchError) onShowDropdownChange(true);
                 }}
                 onChange={(e) => onSearchQueryChange(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Escape') onShowDropdownChange(false);
-                }}
+                onKeyDown={handleSearchKeyDown}
                 placeholder="Type any city live (e.g., Tokyo, London)..."
                 className="w-full pl-9 pr-8 py-2 text-sm rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
               />
@@ -170,12 +197,21 @@ const HeaderBar: React.FC<HeaderBarProps> = ({
                   </div>
                 ) : (
                   <ul className="max-h-60 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800">
-                    {searchResults.map((city) => (
-                      <li key={city.id} role="option" aria-selected={false}>
+                    {searchResults.map((city, idx) => (
+                      <li
+                        key={city.id}
+                        id={`city-option-${city.id}`}
+                        role="option"
+                        aria-selected={idx === activeOptionIdx}
+                      >
                         <button
                           type="button"
                           onClick={() => onSelectCity(city)}
-                          className="w-full text-left px-3.5 py-2.5 hover:bg-teal-50 dark:hover:bg-teal-950/50 flex items-center justify-between gap-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-teal-500"
+                          className={`w-full text-left px-3.5 py-2.5 flex items-center justify-between gap-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-teal-500 ${
+                            idx === activeOptionIdx
+                              ? 'bg-teal-50 dark:bg-teal-950/60'
+                              : 'hover:bg-teal-50 dark:hover:bg-teal-950/50'
+                          }`}
                         >
                           <div>
                             <div className="text-sm font-medium text-slate-900 dark:text-white">

@@ -159,13 +159,16 @@ describe('VayuGuard Dashboard Integration', () => {
 
     expect(await screen.findByText(/Keep windows sealed during 08:00–11:00/i)).toBeInTheDocument();
 
-    // Open Diagnostics modal and dismiss with Escape key
-    await user.click(screen.getByRole('button', { name: /Open AQI Engine Verification Diagnostics/i }));
+    // Open Diagnostics modal, verify focus moves into dialog, and restore on Escape
+    const diagBtn = screen.getByRole('button', { name: /Open AQI Engine Verification Diagnostics/i });
+    diagBtn.focus();
+    await user.click(diagBtn);
     expect(screen.getByRole('dialog', { name: /US EPA PM2\.5 AQI Engine Verification/i })).toBeInTheDocument();
     await user.keyboard('{Escape}');
     expect(
       screen.queryByRole('dialog', { name: /US EPA PM2\.5 AQI Engine Verification/i })
     ).not.toBeInTheDocument();
+    expect(diagBtn).toHaveFocus();
 
     // Toggle dark mode and verify aria-pressed
     const themeBtn = screen.getByRole('button', { name: /Switch to (dark|light) mode/i });

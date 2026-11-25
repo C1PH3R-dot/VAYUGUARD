@@ -111,7 +111,7 @@ const ActionPlannerSection: React.FC<ActionPlannerSectionProps> = ({
         aria-label="Actionable smog reduction categories"
         className="grid grid-cols-3 gap-2 p-1.5 rounded-2xl bg-slate-200/70 dark:bg-slate-800/90"
       >
-        {ACTION_TABS.map((tab) => {
+        {ACTION_TABS.map((tab, idx) => {
           const Icon = tab.icon;
           const active = activeTab === tab.id;
           return (
@@ -123,6 +123,13 @@ const ActionPlannerSection: React.FC<ActionPlannerSectionProps> = ({
               aria-selected={active}
               aria-controls="action-tabpanel"
               onClick={() => onTabChange(tab.id)}
+              onKeyDown={(e) => {
+                if (e.key === 'ArrowRight') {
+                  onTabChange(ACTION_TABS[(idx + 1) % ACTION_TABS.length].id);
+                } else if (e.key === 'ArrowLeft') {
+                  onTabChange(ACTION_TABS[(idx - 1 + ACTION_TABS.length) % ACTION_TABS.length].id);
+                }
+              }}
               className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs sm:text-sm font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 ${
                 active
                   ? 'bg-white dark:bg-slate-900 text-teal-700 dark:text-teal-300 shadow-sm'
